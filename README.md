@@ -1,16 +1,21 @@
 # IoT Dashboard - Real-time Sensor Monitoring
 
-Dashboard IoT berbasis web yang menampilkan data sensor secara real-time menggunakan Next.js, SQLite, dan MQTT.
+Dashboard IoT berbasis web yang menampilkan data sensor secara real-time menggunakan Next.js, SQLite, dan MQTT dengan koneksi ke HiveMQ Cloud broker.
 
 ## 🚀 Fitur Utama
 
-- **Real-time Monitoring**: Data sensor diperbarui otomatis tanpa refresh halaman
-- **Multiple Sensors**: Mendukung berbagai jenis sensor (suhu, kelembaban, tekanan, dll)
-- **Data Visualization**: 
+- **Real-time Monitoring**: Data sensor diperbarui otomatis setiap 3 detik tanpa refresh halaman
+- **Multiple Sensors**: Mendukung berbagai jenis sensor (suhu, kelembaban, gerakan, dll)
+- **Settings Page**: Halaman pengaturan untuk menambah, mengedit, dan menghapus sensor secara dinamis
+- **Flexible Data Format**: Mendukung format JSON (`{"value": 29.7}`) dan plain text (`29.7`, `ON`, `OFF`)
+- **ON/OFF Support**: Sensor gerakan/motion menampilkan status ON/OFF pada dashboard
+- **Custom Colors**: Warna card sensor dapat dikustomisasi melalui halaman settings
+- **Responsive Grid**: Layout 4 card per baris yang responsif
+- **Data Visualization**:
   - Card untuk menampilkan nilai terbaru
   - Grafik interaktif untuk data historis
-- **Database Storage**: Menyimpan semua data sensor ke SQLite
-- **MQTT Integration**: Menerima data dari broker MQTT secara real-time
+- **Database Storage**: Menyimpan semua data sensor dan konfigurasi ke SQLite
+- **MQTT Integration**: Menerima data dari HiveMQ Cloud broker dengan TLS/SSL
 
 ## 📋 Teknologi yang Digunakan
 
@@ -27,21 +32,29 @@ Dashboard IoT berbasis web yang menampilkan data sensor secara real-time menggun
 iot/
 ├── app/
 │   ├── api/
-│   │   └── sensor-data/
-│   │       ├── route.ts           # POST endpoint untuk menyimpan data
-│   │       ├── latest/
-│   │       │   └── route.ts       # GET data terbaru semua sensor
-│   │       └── history/
-│   │           └── route.ts       # GET data historis per sensor
+│   │   ├── sensor-data/
+│   │   │   ├── route.ts           # POST endpoint untuk menyimpan data
+│   │   │   ├── latest/
+│   │   │   │   └── route.ts       # GET data terbaru semua sensor
+│   │   │   └── history/
+│   │   │       └── route.ts       # GET data historis per sensor
+│   │   ├── sensors/
+│   │   │   └── route.ts           # CRUD endpoint untuk sensor config
+│   │   └── broker-config/
+│   │       └── route.ts           # CRUD endpoint untuk broker config
 │   ├── components/
-│   │   ├── SensorCard.tsx         # Komponen card sensor
+│   │   ├── SensorCard.tsx         # Komponen card sensor (dengan ON/OFF support)
 │   │   └── SensorChart.tsx        # Komponen grafik sensor
+│   ├── settings/
+│   │   └── page.tsx               # Halaman pengaturan sensor & broker
 │   ├── layout.tsx                 # Root layout
 │   ├── page.tsx                   # Dashboard utama
 │   └── globals.css                # Global styles
 ├── lib/
-│   └── db.ts                      # Database utilities & schema
+│   ├── db.ts                      # Database utilities & schema
+│   └── config.ts                  # Konfigurasi aplikasi
 ├── mqtt-subscriber.js             # MQTT subscriber service
+├── test-mqtt.js                   # Script simulasi data sensor
 ├── package.json
 ├── tsconfig.json
 ├── tailwind.config.ts
@@ -49,7 +62,7 @@ iot/
 └── iot-data.db                    # SQLite database (auto-generated)
 ```
 
-## 🔧 Instalasi
+## 🔧 Instalasi & Menjalankan
 
 ### 1. Install Dependencies
 
@@ -63,7 +76,7 @@ npm install
 npm run dev
 ```
 
-Dashboard akan berjalan di `http://localhost:3000`
+Dashboard akan berjalan di `http://localhost:3312`
 
 ### 3. Jalankan MQTT Subscriber
 
@@ -74,20 +87,51 @@ npm run mqtt
 ```
 
 MQTT subscriber akan:
-- Connect ke broker MQTT (default: broker.hivemq.com)
-- Subscribe ke topic: `sensor/suhu`, `sensor/kelembaban`, `sensor/tekanan`
+- Connect ke HiveMQ Cloud broker dengan TLS (port 8883)
+- Subscribe ke topic yang dikonfigurasi di database
 - Menyimpan data yang diterima ke database SQLite
+- Mendukung format data JSON dan plain text
+
+### 4. (Opsional) Jalankan Test Publisher
+
+Di terminal terpisah, untuk simulasi data sensor:
+
+```bash
+node test-mqtt.js
+```
 
 ## 📡 MQTT Configuration
 
-### Default Topics
+### Broker
 
-- `sensor/suhu` - Data suhu
-- `sensor/kelembaban` - Data kelembaban
-- `sensor/tekanan` - Data tekanan
+- **URL**: `mqtts://729ed9997932469090ce4f1d9eeff994.s1.eu.hivemq.cloud`
+- **Port**: `8883` (TLS/SSL)
+- **Username**: `test-iot`
+- **Password**: `Test12345`
+- **Protocol**: `mqtts` (MQTT over TLS)
 
-### Format Payload (JSON)
+### Topics (Dikonfigurasi via Settings Page)
 
+Topics sensor dikelola melalui halaman `/settings`. Contoh default:
+
+- `rumah/sensor/suhu` - Data suhu
+- `rumah/sensor/kelembapan` - Data kelembaban
+- `rumah/sensor/gerak` - Data gerakan (ON/OFF)
+
+### Format Payload yang Didukung
+
+**1. Plain Text (angka)**
+```
+29.7
+```
+
+**2. Plain Text (status)**
+```
+ON
+OFF
+```
+
+**3. JSON Object**
 ```json
 {
   "value": 25.5,
@@ -95,8 +139,7 @@ MQTT subscriber akan:
 }
 ```
 
-Atau format alternatif:
-
+**4. JSON Alternatif**
 ```json
 {
   "temperature": 25.5,
@@ -105,33 +148,34 @@ Atau format alternatif:
 }
 ```
 
-### Mengirim Data Test ke MQTT
+## ⚙️ Settings Page (`/settings`)
 
-Anda bisa menggunakan MQTT client seperti MQTT Explorer atau mosquitto_pub:
+Halaman pengaturan untuk mengelola sensor dan broker MQTT.
 
-```bash
-# Install mosquitto-clients
-sudo apt-get install mosquitto-clients
+### Fitur Settings
 
-# Kirim data suhu
-mosquitto_pub -h broker.hivemq.com -t sensor/suhu -m '{"value": 25.5, "unit": "°C"}'
+- **Tambah Sensor Baru**: Tambahkan sensor dengan konfigurasi topic, unit, icon, dan warna
+- **Edit Sensor**: Ubah konfigurasi sensor yang sudah ada secara inline
+- **Hapus Sensor**: Hapus sensor yang tidak digunakan
+- **Color Picker**: Pilih warna card sensor menggunakan color picker
+- **Broker Config**: Konfigurasi URL broker MQTT
 
-# Kirim data kelembaban
-mosquitto_pub -h broker.hivemq.com -t sensor/kelembaban -m '{"value": 65, "unit": "%"}'
+### Kolom Konfigurasi Sensor
 
-# Kirim data tekanan
-mosquitto_pub -h broker.hivemq.com -t sensor/tekanan -m '{"value": 1013, "unit": "hPa"}'
-```
-
-### Menggunakan MQTT Explorer (GUI)
-
-1. Download MQTT Explorer: http://mqtt-explorer.com/
-2. Connect ke `broker.hivemq.com`
-3. Publish message ke topic yang diinginkan dengan payload JSON
+| Kolom | Deskripsi | Contoh |
+|-------|-----------|--------|
+| `sensor_type` | Tipe/ID sensor (unik) | `suhu` |
+| `sensor_name` | Nama tampilan | `Suhu` |
+| `topic` | MQTT topic | `rumah/sensor/suhu` |
+| `unit` | Satuan pengukuran | `°C`, `%`, `-` |
+| `icon` | Emoji icon | 🌡️, 💧, 🏃 |
+| `color` | Warna card (hex/rgb) | `#ff0000` |
+| `bg_gradient` | CSS gradient | `bg-gradient-to-br from-red-500...` |
 
 ## 🗄️ Database Schema
 
 ```sql
+-- Data sensor
 CREATE TABLE sensor_data (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   sensor_type TEXT NOT NULL,
@@ -139,101 +183,83 @@ CREATE TABLE sensor_data (
   unit TEXT,
   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Konfigurasi sensor
+CREATE TABLE sensor_config (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sensor_type TEXT UNIQUE NOT NULL,
+  sensor_name TEXT NOT NULL,
+  topic TEXT NOT NULL,
+  unit TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  color TEXT NOT NULL,
+  bg_gradient TEXT NOT NULL,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Konfigurasi broker
+CREATE TABLE broker_config (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  broker_url TEXT NOT NULL,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
 ## 🌐 API Endpoints
 
-### POST /api/sensor-data
-Menyimpan data sensor baru
+### Sensor Data
 
-**Request Body:**
-```json
-{
-  "sensor_type": "suhu",
-  "value": 25.5,
-  "unit": "°C"
-}
-```
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| POST | `/api/sensor-data` | Menyimpan data sensor baru |
+| GET | `/api/sensor-data/latest` | Data terbaru semua sensor |
+| GET | `/api/sensor-data/history?sensor_type=suhu&limit=50` | Data historis per sensor |
 
-### GET /api/sensor-data/latest
-Mendapatkan data terbaru dari semua sensor
+### Sensor Config
 
-**Response:**
-```json
-{
-  "data": [
-    {
-      "id": 1,
-      "sensor_type": "suhu",
-      "value": 25.5,
-      "unit": "°C",
-      "timestamp": "2024-01-01 12:00:00"
-    }
-  ]
-}
-```
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| GET | `/api/sensors` | Semua konfigurasi sensor |
+| POST | `/api/sensors` | Tambah sensor baru |
+| PUT | `/api/sensors` | Update sensor |
+| DELETE | `/api/sensors?id=1` | Hapus sensor |
 
-### GET /api/sensor-data/history?sensor_type=suhu&limit=50
-Mendapatkan data historis sensor tertentu
+### Broker Config
 
-**Query Parameters:**
-- `sensor_type` (required): Tipe sensor
-- `limit` (optional): Jumlah data (default: 50)
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| GET | `/api/broker-config` | Konfigurasi broker saat ini |
+| PUT | `/api/broker-config` | Update konfigurasi broker |
 
 ## 🎨 UI Features
 
-### Dashboard Components
+### Dashboard (`/`)
 
-1. **Header**
-   - Judul aplikasi
-   - Status koneksi real-time
+- **Sensor Cards**: Grid responsif 4 card per baris dengan warna kustom
+- **ON/OFF Display**: Sensor gerakan menampilkan status ON/OFF
+- **Live Indicator**: Animasi pulse hijau menandakan data live
+- **Historical Charts**: Grafik line interaktif per sensor
+- **Auto-Update**: Data diperbarui setiap 3 detik
 
-2. **Sensor Cards**
-   - Menampilkan nilai terbaru setiap sensor
-   - Icon dan warna berbeda per sensor
-   - Indikator "Live" dengan animasi
+### Settings (`/settings`)
 
-3. **Charts**
-   - Grafik line interaktif
-   - Menampilkan 20 data terakhir
-   - Auto-update setiap 5 detik
-
-### Auto-Update Mechanism
-
-- **Latest Data**: Polling setiap 3 detik
-- **Historical Data**: Polling setiap 5 detik
-- Tidak perlu refresh halaman manual
+- **Tabel Sensor**: Tampilan tabel dengan kolom lengkap
+- **Inline Editing**: Edit langsung di tabel
+- **Color Picker**: Input warna visual
+- **Broker Config**: Pengaturan URL broker MQTT
 
 ## 🔄 Menambah Sensor Baru
 
-### 1. Update MQTT Subscriber
+Cukup buka halaman **Settings** (`/settings`):
 
-Edit `mqtt-subscriber.js`:
-
-```javascript
-const TOPICS = [
-  'sensor/suhu',
-  'sensor/kelembaban',
-  'sensor/tekanan',
-  'sensor/cahaya',  // Sensor baru
-];
-```
-
-### 2. Update Dashboard Config (Optional)
-
-Edit `app/page.tsx` untuk menambah icon dan warna:
-
-```typescript
-const getSensorConfig = (type: string) => {
-  const configs: { [key: string]: { icon: string; color: string } } = {
-    suhu: { icon: '🌡️', color: 'text-red-500' },
-    kelembaban: { icon: '💧', color: 'text-blue-500' },
-    tekanan: { icon: '📊', color: 'text-purple-500' },
-    cahaya: { icon: '💡', color: 'text-yellow-500' },  // Sensor baru
-  };
-  return configs[type] || { icon: '📡', color: 'text-gray-500' };
-};
-```
+1. Klik tombol **"Tambah Sensor Baru"**
+2. Isi form: tipe sensor, nama, topic, unit, icon, warna
+3. Klik **"Simpan"**
+4. **Restart MQTT Subscriber** agar subscribe ke topic baru:
+   ```bash
+   # Stop subscriber (Ctrl+C)
+   npm run mqtt
+   ```
 
 ## 🚀 Production Deployment
 
@@ -244,67 +270,44 @@ npm run build
 npm start
 ```
 
-### Environment Variables (Optional)
-
-Buat file `.env.local`:
-
-```env
-MQTT_BROKER=mqtt://broker.hivemq.com
-DATABASE_PATH=./iot-data.db
-```
+Aplikasi akan berjalan di port `3312`.
 
 ## 🐛 Troubleshooting
 
 ### MQTT Subscriber tidak menerima data
 
-1. Pastikan broker MQTT dapat diakses
-2. Cek koneksi internet
-3. Verifikasi topic name sudah benar
-4. Cek format payload JSON
+1. Pastikan broker HiveMQ Cloud dapat diakses
+2. Verifikasi credentials (username/password) benar
+3. Cek topic di `/settings` sesuai dengan topic publisher
+4. Pastikan format data sesuai (JSON atau plain text)
+5. Cek log subscriber untuk pesan error
 
-### Dashboard tidak menampilkan data
+### Dashboard tidak menampilkan data terbaru
 
 1. Pastikan MQTT subscriber sedang berjalan (`npm run mqtt`)
-2. Cek database `iot-data.db` sudah terbuat
-3. Kirim test data ke MQTT broker
-4. Buka browser console untuk error messages
+2. Cek log subscriber: harus ada `💾 Saved:` untuk setiap data yang masuk
+3. Jika hanya `📨 Received` tanpa `💾 Saved`, format data tidak sesuai
+4. Hard refresh browser: `Ctrl + Shift + R`
+5. Pastikan sensor terdaftar di `/settings`
 
-### Database error
+### Sensor muncul kembali setelah dihapus
 
-1. Hapus file `iot-data.db` dan restart aplikasi
-2. Database akan dibuat ulang otomatis
+- Pastikan menggunakan versi terbaru `mqtt-subscriber.js` yang tidak memiliki default sensor insertion
 
-## 📝 Testing
+### Database locked error
 
-### Simulasi Data Sensor dengan Script
+1. Pastikan hanya satu instance subscriber yang berjalan
+2. Stop subscriber dan dev server, lalu jalankan ulang
 
-Buat file `test-mqtt.js`:
+## 📝 Scripts
 
-```javascript
-const mqtt = require('mqtt');
-const client = mqtt.connect('mqtt://broker.hivemq.com');
-
-client.on('connect', () => {
-  console.log('Connected to MQTT broker');
-  
-  setInterval(() => {
-    const suhu = (20 + Math.random() * 15).toFixed(1);
-    const kelembaban = (40 + Math.random() * 40).toFixed(1);
-    const tekanan = (1000 + Math.random() * 30).toFixed(1);
-    
-    client.publish('sensor/suhu', JSON.stringify({ value: parseFloat(suhu), unit: '°C' }));
-    client.publish('sensor/kelembaban', JSON.stringify({ value: parseFloat(kelembaban), unit: '%' }));
-    client.publish('sensor/tekanan', JSON.stringify({ value: parseFloat(tekanan), unit: 'hPa' }));
-    
-    console.log(`Published - Suhu: ${suhu}°C, Kelembaban: ${kelembaban}%, Tekanan: ${tekanan}hPa`);
-  }, 5000);
-});
-```
-
-Jalankan:
-```bash
-node test-mqtt.js
-```
+| Command | Deskripsi |
+|---------|-----------|
+| `npm run dev` | Jalankan Next.js development server (port 3312) |
+| `npm run build` | Build untuk production |
+| `npm start` | Jalankan production server (port 3312) |
+| `npm run mqtt` | Jalankan MQTT subscriber |
+| `node test-mqtt.js` | Simulasi data sensor |
 
 ## 📚 Resources
 
@@ -312,6 +315,7 @@ node test-mqtt.js
 - [MQTT.js Documentation](https://github.com/mqttjs/MQTT.js)
 - [Chart.js Documentation](https://www.chartjs.org/docs/)
 - [Better SQLite3 Documentation](https://github.com/WiseLibs/better-sqlite3)
+- [HiveMQ Cloud](https://www.hivemq.com/cloud/)
 
 ## 📄 License
 
@@ -319,4 +323,4 @@ MIT License - Silakan digunakan untuk keperluan apapun.
 
 ## 👨‍💻 Author
 
-IoT Dashboard Application - 2024
+IoT Dashboard Application - 2026
